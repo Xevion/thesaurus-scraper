@@ -12,12 +12,16 @@ REGEX = r'window\.INITIAL_STATE\s+=\s+\{([\s\S]+)\};'
 
 class ThesaurusSpider(scrapy.Spider):
     name = 'thesaurus'
-    start_urls = ['https://www.thesaurus.com/browse/deny']
+    start_urls = ['https://www.thesaurus.com/browse/lock%20up']
     download_delay = 1
 
     custom_settings = {
         'FEED_EXPORT_ENCODING': 'utf-8'
     }
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.queue = set()
 
     def parse(self, response: Response, **kwargs):
         for script in response.xpath('//script/text()').getall():
@@ -31,8 +35,16 @@ class ThesaurusSpider(scrapy.Spider):
                 decoded = custom_demjson.decode(m.group(1), encoding='unicode-escape')
 
                 # Write a proper valid JSON file out
-                with open('example.json', 'w', encoding='utf-8') as file:
-                    file.write(custom_demjson.encode(decoded))
+                # with open('example.json', 'w', encoding='utf-8') as file:
+                #     file.write(custom_demjson.encode(decoded))
 
-                data = decoded['searchData']['relatedWordsApiData']['data'][0]
-                print({'synonyms': sorted([Word.from_raw(word) for word in data['synonyms']], key=lambda word: word.similarity)})
+                raw_data = decoded['searchData']
+                word = Word.from_raw(data=raw_data)
+
+                urls = word.get_urls()
+                new = urls - self.queue
+                self.queue.update(new)
+
+                if len(new) > 0:
+                    print(f'Found {len(new)} more URLs.')
+                return response.follow_all(new)
